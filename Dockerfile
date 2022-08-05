@@ -17,9 +17,10 @@ RUN pip install --upgrade pip
 
 # Install production dependencies.
 RUN pip install --no-cache-dir -r requirements.txt
-RUN git clone https://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@github.com/Pirxel-Ai/main-library.git
-RUN pip install -r main-library/requirements.txt
-
+RUN git clone https://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@github.com/Pirxel-Ai/main-library.git temp
+RUN mv temp/src .
+RUN mv temp/settings .
+RUN rm -rf temp
 
 # Run the web service on container startup. Here we use the gunicorn
 # webserver, with one worker process and 8 threads.

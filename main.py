@@ -3,9 +3,10 @@ import sys
 import logging
 import os
 
-workdir = os.path.dirname(os.path.abspath(__file__))
-MAIN_LIBRARY_PATH = str(workdir) + '/main-library'
-sys.path.append(str(MAIN_LIBRARY_PATH))
+# workdir = os.path.dirname(os.path.abspath(__file__))
+# MAIN_LIBRARY_PATH = str(workdir) + '/main-library'
+# sys.path.append(str(MAIN_LIBRARY_PATH))
+#print(MAIN_LIBRARY_PATH)
 from src.scam_analyzer.scam import ScamDetector, search_words
 from src.fetch_data import (create_dataset, list_datasets, get_dataset, update_dataset, 
                             delete_dataset, create_table, insert_rows, delete_table, 
