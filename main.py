@@ -1,6 +1,5 @@
 import pandas as pd
-import sys
-import logging
+import logging as log
 import os
 
 from src.scam_analyzer.scam import ScamDetector, search_words
@@ -116,7 +115,7 @@ def stream_and_insert():
         if len(df)>0:
             insert_df(df[list_cols], TABLE_ID)
     except Exception as e:
-        log.linfo(e)
+        log.info(e)
         return 'Error'
 
     return 'OK'
