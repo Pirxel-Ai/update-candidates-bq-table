@@ -3,10 +3,6 @@ import sys
 import logging
 import os
 
-# workdir = os.path.dirname(os.path.abspath(__file__))
-# MAIN_LIBRARY_PATH = str(workdir) + '/main-library'
-# sys.path.append(str(MAIN_LIBRARY_PATH))
-#print(MAIN_LIBRARY_PATH)
 from src.scam_analyzer.scam import ScamDetector, search_words
 from src.fetch_data import (create_dataset, list_datasets, get_dataset, update_dataset, 
                             delete_dataset, create_table, insert_rows, delete_table, 
@@ -124,5 +120,6 @@ def stream_and_insert():
         return 'Error'
 
     return 'OK'
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
