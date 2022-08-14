@@ -1,39 +1,39 @@
 import pandas as pd
+from tqdm import tqdm_notebook as tqdm
+import tweepy
 import logging as log
-import os
-
+import time
+from src.utils import read_config
 from src.scam_analyzer.scam import ScamDetector, search_words
 from src.fetch_data import (create_dataset, list_datasets, get_dataset, update_dataset, 
                             delete_dataset, create_table, insert_rows, delete_table, 
                             list_tables, insert_df, query_datasets)
 from flask import Flask
+import os
+
+
+config = read_config('../settings/config.ini')
 
 app = Flask(__name__)
 
-detector = ScamDetector('Twitter')
+# Authenticate to Twitter
+bearer_token = config['PirxBot']['BEARER_TOKEN']
+consumer_key = config['PirxBot']['API_KEY']
+consumer_secret_key = config['PirxBot']['API_SECRET']
+access_token = config['PirxBot']['ACCES_TOKEN']
+access_token_secret = config['PirxBot']['ACCES_TOKEN_SECRET']
+
+client = tweepy.Client(bearer_token=bearer_token,
+                      consumer_key=consumer_key,
+                      consumer_secret=consumer_secret_key,
+                      access_token=access_token,
+                      access_token_secret=access_token_secret,
+                      )
+
+
+detector = ScamDetector(source='Twitter')
 
 TABLE_ID = 'deeplogo.Fraud.candidates'
-
-screen_name_list = [
-            'ICBCArgentina', 
-            'BancoGalicia', 
-            'bbva_argentina', 
-            'Santander_Ar',
-            'HSBC_AR',
-            'banco_patagonia',
-            'bancomacro',
-            'MODO_Arg',
-            'uala_arg',
-            'mercadopago',
-            'RappiArgentina',
-            'PedidosYA'
-                   ] 
-
-
-
-QUERY = (
-        "SELECT id FROM `deeplogo.Fraud.candidates`"
-    )
 
 list_cols = [
  'target',
@@ -45,75 +45,90 @@ list_cols = [
  'location',
  'description',
  'url',
-# 'entities',
  'protected',
  'followers_count',
  'friends_count',
  'listed_count',
  'created_at',
  'favourites_count',
-# 'utc_offset',
-# 'time_zone',
-# 'geo_enabled',
  'verified',
  'statuses_count',
  'lang',
-# 'status',
-# 'contributors_enabled',
-# 'is_translator',
-# 'is_translation_enabled',
-#  'profile_background_color',
-#  'profile_background_image_url',
-#  'profile_background_image_url_https',
-#  'profile_background_tile',
  'profile_image_url',
-#  'profile_image_url_https',
-#  'profile_banner_url',
-#  'profile_link_color',
-#  'profile_sidebar_border_color',
-#  'profile_sidebar_fill_color',
-#  'profile_text_color',
-#  'profile_use_background_image',
-#  'has_extended_profile',
-#  'default_profile',
-#  'default_profile_image',
-#  'following',
-#  'follow_request_sent',
-#  'notifications',
-#  'translator_type',
-#  'withheld_in_countries'
-]    
+]
+
+def get_detected_candidates(table_id):
+
+    QUERY = (
+            f"SELECT * FROM `{table_id}`"
+        )
+
+    rows = list(query_datasets(QUERY))
+
+    df_candidates = pd.DataFrame([dict(x) for x in rows])
+    list_ids = df_candidates.id.unique().tolist()
+
+    analyzed_screen_name_list = df_candidates['screen_name'].unique().tolist()
+    
+    return analyzed_screen_name_list, list_ids
+
+def get_followings(client):
+
+    self_data = client.get_me()
+    following_list = []
+    next_token = None
+    while True:
+        partial_list = client.get_users_following(self_data[0].id, pagination_token=next_token, user_auth=True)
+        for user in tqdm(partial_list[0]):
+            following_list.append(user) 
+        try:
+            next_token = partial_list[3].get('next_token')
+            if not next_token:
+                break
+        except tweepy.RateLimitError:
+            time.sleep(60 * 15)
+            continue
+        except StopIteration:
+            break
+        
+    scree_name_list = [x.username for x in following_list]
+    
+    return scree_name_list
+
+scree_name_list = get_followings(client)
     
 @app.route("/")
-def stream_and_insert():    
+def stream_and_insert():
+    analyzed_screen_name_list, list_ids = get_detected_candidates(TABLE_ID) 
+    detector.list_reported =  analyzed_screen_name_list
     results = []
-    for screen_name in screen_name_list:
+    for screen_name in scree_name_list:
+        print(f'Target: {screen_name}')
         try:
             user_info = detector.tw.get_user_info(screen_name, user_id=False)
-            predictions = detector.find_similar_users(user_info)
-            for p in predictions:
-                d = {}
-                d['target'] = screen_name
-                d['match_type'] = p['match_type']
-                d['user_info'] = p['user_info']
-                results.append(d)
-        except Exception as e:
-            log.info(e)
-            return 'Error'
+            if user_info is not None:
+                predictions = detector.find_similar_users(user_info)
+                print(f'Found {len(predictions)} candidates')
+                for p in predictions:
+                    d = {}
+                    d['target'] = screen_name
+                    d['match_type'] = p['match_type']
+                    d['user_info'] = p['user_info']
+                    results.append(d)
+        except:
+            pass
     
     try:
         df = pd.DataFrame(results)
         df = df.join(df.user_info.apply(pd.Series))
         del df['user_info']
-        rows = query_datasets(QUERY)
-
-        # Filter out ids already in DB
-        list_ids = [row['id'] for row in rows]
-        df = df[~df.id.isin(list_ids)]
-        print(len(df))
-
+        
+        # APPEND
         if len(df)>0:
-            insert_df(df[list_cols], TABLE_ID)
+            df_to_append = df[~df.id.isin(list_ids)]
+            df_to_append = df_to_append[list_cols]
+            df_to_append.reset_index(drop=True, inplace=True)
+            insert_df(df_to_append, TABLE_ID)
     except Exception as e:
         log.info(e)
         return 'Error'
